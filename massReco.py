@@ -47,7 +47,6 @@ def calcMass(photon_branch, electron_branch, muon_branch):
     m_phi = uproot.tree.TBranchMethods.array(muon_branch["Muon.Phi"])
 
     mass = []
-    entries = 0
     for i in range(0, len(electron_branch)):
 
         # if there is not enough information
@@ -62,7 +61,6 @@ def calcMass(photon_branch, electron_branch, muon_branch):
             gamma.setptetaphim(g_pt[i][gam_indices[0]], g_eta[i][gam_indices[0]], g_phi[i][gam_indices[0]], g_mass)
             reco_mass = (lep1 + lep2 + gamma).m
             mass.append(reco_mass)
-            entries = entries + 1
 
         elif len(m_pt[i]) >= 2:
             lep_indices = findNHigest(m_pt[i], 2)
@@ -72,7 +70,6 @@ def calcMass(photon_branch, electron_branch, muon_branch):
             gamma.setptetaphim(g_pt[i][gam_indices[0]], g_eta[i][gam_indices[0]], g_phi[i][gam_indices[0]], g_mass)
             reco_mass = (lep1 + lep2 + gamma).m
             mass.append(reco_mass)
-            entries = entries + 1
 
     return mass
 
