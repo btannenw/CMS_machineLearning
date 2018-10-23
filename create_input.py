@@ -12,6 +12,7 @@ sources: https://blogs.sas.com/content/iml/2016/03/30/generate-uniform-2d-ball.h
 def create_train_data(seed, radius, n):
     '''
     create n number of uniformly random data points in a circle of given radius
+    return a 3-d array with (x,y,0) where 0 is the label for the data: 0 = normal
     '''
     x_pts = []
     y_pts = []
@@ -24,9 +25,11 @@ def create_train_data(seed, radius, n):
         y = r * math.sin(theta)
         x_pts.append(x)
         y_pts.append(y)
-        pts.append([x,y])
-    x_pts = np.asarray(x_pts)
-    y_pts = np.asarray(y_pts)
+        pts.append([x,y,0])
+    # r, x, y = create_test_data(3, [1, 1], 0.3, 500)
+    # plt.plot(x_pts, y_pts, 'ro', markersize=5)
+    # plt.plot(x, y, 'bo', markersize=5)
+    # plt.show()
     pts = np.asarray(pts)
     return pts
 
@@ -34,19 +37,17 @@ def create_train_data(seed, radius, n):
 def create_test_data(seed, mean,std, n):
     '''
     create n number of random 2-d gaussian points with a covariance of std with a mean of mean
+    return a 3-d array with (x,y,1) where 1 is the label for the data: 1 = anomalous
     '''
     cov = [[std,0],[0,std]]
     numpy.random.seed(seed)
     x, y = numpy.random.multivariate_normal(mean, cov, n).T
-    return np.column_stack((x,y))
+    # return np.column_stack((x,y)), x, y
+    pts = np.column_stack((x,y))
+    labels = np.ones((n, 1))
+    pts = np.column_stack((pts, labels))
+    return pts
 
 
-def draw_plots(xtrain, ytrain, xtest, ytest):
-    '''
-    draw the data points created by create_test_data and create_train_data
-    '''
-    plt.plot(xtrain, ytrain, 'ro', markersize=5)
-    plt.plot(xtest, ytest, 'bo', markersize=5)
-    plt.show()
 
 
