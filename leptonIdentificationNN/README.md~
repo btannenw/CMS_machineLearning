@@ -16,10 +16,6 @@ Instructions to be added shortly.
 
 I used pip to install the necessary packages. To install the packages needed for this folder, run `pip install numpy sklearn matplotlib scipy uproot pandas` in your terminal window.
 
-### Using the Notebooks
-
-My notebooks often include global lists which I use to keep track of how the weights, biases, and accuracies change throughout the algorithm training. I know this is clunky, but as long as you researt the kernel every time you train the algorithm, this isn't a problem.
-
 ## My Results
 
 ### Exploring Overtraining
