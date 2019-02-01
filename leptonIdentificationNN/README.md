@@ -8,7 +8,7 @@ Unless otherwise noted, the instructions for installing packages and application
 
 ## Development Environment
 
-I run this in a virtual environment on my machine to keep my research python environment separate from all other python development. This ensures that I can mess up one environment without ruining the other (yes, I speak from experience).
+I run this in a virtual environment on my machine to keep my research python environment separate from all other python development. This ensures that I can mess up one environment without ruining the other (yes, I do speak from experience).
 
 ### Setting up a Virtual Environment
 
