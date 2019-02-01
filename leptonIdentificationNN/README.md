@@ -41,6 +41,9 @@ The dataset in small_v2.root has five factors: transverse momentum (Pt), Eta, Ph
 #### Relationships Between Input Factors in small_v2.root
 In order to preprocess the data, I used the following relationships between the input factors to create new datasets.
 
+![Physics equations relating Pt Eta Phi and Energy which I used to find the mass of each lepton](DataExtractionEquations.png)
+
+I used these factors to calculate the mass of each lepton to distinguish between the electrons and muons and establish a baseline accuracy for my network.
 
 #### P<sup>2</sup> -E<sup>2</sup>
 
