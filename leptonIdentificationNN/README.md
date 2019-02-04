@@ -55,7 +55,7 @@ I calculated the mass as follows:
 6. Divide data into electrons and muons based on mass cutoff determined in step 5 -->
 
 <!-- I plotted the resulting mass -->
-Once I found the mass of the lepton with the highest transverse momentum in each event, I plotted the masses to see how they were distributed. 
+Once I found the mass of the lepton with the highest transverse momentum in each event, I plotted the masses to see how they were distributed. <br>
 ![Distribution of Real Lepton Masses less than .125 GeV/c^2](LeptonMassDistr.png)
 
 Looking at the graph, it is apparent that 0.10 GeV is a reasonable mass cutoff to distinguish between electrons and muons. In my code, I labeled anything more massive than 0.10GeV as a muon, and anything smaller than 0.10GeV as an electron.
