@@ -15,7 +15,7 @@ Unless otherwise noted, the instructions for installing packages and application
 - Naviagte to `localhost:8888`
     - If this is your first time using the service, then you will have to paste the token that is provided in the terminal
 - Enjoy!!
-- The jupyter notebooks are stored in `~/juypter` directory and can be updated there
+- The jupyter notebooks are stored in `~/jupyter` directory and can be updated there
 
 ### Setting up a Virtual Environment
 I run this in a virtual environment on my machine to keep my research python environment separate from all other python development. This ensures that I can mess up one environment without ruining the other (yes, I speak from experience).

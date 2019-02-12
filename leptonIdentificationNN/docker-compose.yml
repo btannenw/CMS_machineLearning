@@ -4,7 +4,7 @@ services:
   cms_machinelearning:
     image: cms_machinelearning
     volumes:
-      - ~/juypter:/home
+      - ~/jupyter:/home
     build: .
     ports:
     - 8888:8888
