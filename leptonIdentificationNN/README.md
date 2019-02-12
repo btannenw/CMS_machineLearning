@@ -31,7 +31,7 @@ For Mac Users: <br>
 To run jupyter in your virtual environment, run `/anaconda3/bin/jupyter_mac.command; exit;` from the same directory where you initialized your virtual environment.
 
 For Everyone Else:<br>
-¯\\\_(ツ)_/¯
+Google it? ¯\\\_(ツ)_/¯
 
 ### Installing the Necessary Packages
 
@@ -43,15 +43,35 @@ My notebooks often include global lists which I use to keep track of how the wei
 
 ## Notes on My Process
 
-### Preprocessing the Data
-The dataset in small_v2.root has five factors: transverse momentum (Pt), Eta, Phi, Energy (E), and labels (isMuon). In [DataExtraction.py](DataExtraction.py), I manipulated the data from the root file to make a few separate datasets all containting the same data but in different representations. 
-
-#### Relationships Between Input Factors in small_v2.root
-In order to preprocess the data, I used the following relationships between the input factors to create new datasets.
+### Establishing a Baseline Accuracy
+#### Premise
+In order to Establish a baseline network accuracy, I used the equations below to calculate the mass of each lepton. Because muons are substantially more massive than electrons, their masses can be used to distinguish between them.
 
 ![Physics equations relating Pt Eta Phi and Energy which I used to find the mass of each lepton](DataExtractionEquations.png)
 
-I used these factors to calculate the mass of each lepton to distinguish between the electrons and muons and establish a baseline accuracy for my network.
+For the sake of simplicity, in events where more than lepton was produced, the lepton with the highest transverse momentum was analyzed.
+
+
+#### Establishing A Mass Cutoff
+<!-- Explain why you need a cutoff -->
+I calculated the mass as follows: 
+1. Use p<sub>t</sub> and 𝝋 to find p<sub>x</sub> and p<sub>y</sub>
+2. Use p<sub>t</sub> and 𝜂 to find p<sub>z</sub> (Eq.1)
+3. Use p<sub>x</sub> p<sub>y</sub> and p<sub>z</sub> to find p
+4. Use p and E to find m (Eq. 2)
+<!-- 5. Plot mass values to graphically determine the cutoff between electrons and muons (Fig. 1)
+6. Divide data into electrons and muons based on mass cutoff determined in step 5 -->
+
+<!-- I plotted the resulting mass -->
+Once I found the mass of the lepton with the highest transverse momentum in each event, I plotted the masses to see how they were distributed. <br>
+![Distribution of Real Lepton Masses less than .125 GeV/c^2](LeptonMassDistr.png)
+
+Looking at the graph, it is apparent that 0.10 GeV is a reasonable mass cutoff to distinguish between electrons and muons. In my code, I labeled anything more massive than 0.10GeV as a muon, and anything smaller than 0.10GeV as an electron.
+
+
+
+### Preprocessing the Network Input Data
+The dataset in small_v2.root has five factors: transverse momentum (Pt), Eta, Phi, Energy (E), and labels (isMuon). In [DataExtraction.py](DataExtraction.py), I used the same methods from establishing a baseline accuracy to manipulate the data from the root file to make a few separate datasets all containting the same data but in different representations. 
 
 #### P<sup>2</sup> -E<sup>2</sup>
 
