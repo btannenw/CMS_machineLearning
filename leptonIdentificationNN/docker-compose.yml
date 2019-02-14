@@ -1,0 +1,10 @@
+version: '2.1'
+
+services:
+  cms_machinelearning:
+    image: cms_machinelearning
+    volumes:
+      - ~/jupyter:/home
+    build: .
+    ports:
+    - 8888:8888

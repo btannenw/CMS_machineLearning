@@ -1,0 +1,10 @@
+version: '2.1'
+
+services:
+  cms_machinelearning:
+    image: cms_machinelearning
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - 8888:8888
