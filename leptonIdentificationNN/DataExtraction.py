@@ -122,7 +122,7 @@ def getP2E2(_eArr, _isMuonArr, _pArr):
             dataArr.append([e2, p2])
     return dataArr
 # gets just P^2 and -E^2
-def getP2NegE2(_eArr, _isMuonArr, _pArr):
+def getE2P2Dec(_eArr, _isMuonArr, _pArr):
     dataArr = []
     for e, im, p in zip(_eArr, _isMuonArr, _pArr):
         if(im.size>0): # if the isMuon value isn't null
@@ -130,7 +130,7 @@ def getP2NegE2(_eArr, _isMuonArr, _pArr):
                 if(e.size>0):
                     e=e[0]
                     e2=e**2
-                    e2 = e2 - (np.floor(e2)*1.000000)
+                    e2 = e2 - (np.floor(e2)*1.000000) # these steps are because we only care about what's after the decimal point
                     e2 *= 10
             if isinstance(p, np.ndarray):
                 if(p.size>0):
@@ -321,7 +321,7 @@ dataWithP2 = getDataWithP2(leadPt, leadEta, leadPhi, leadE, leadIM, leadP)
 dataWithP2E2 = getDataWithP2E2(leadPt, leadEta, leadPhi, leadE, leadIM, leadP)
 dataWithMass = getDataWithMass(leadPt, leadEta, leadPhi, leadE, leadM, leadIM)
 p2E2 = getP2E2(leadE, leadIM, leadP)
-p2NegE2 = getP2NegE2(leadE, leadIM, leadP)
+e2P2Dec = getE2P2Dec(leadE, leadIM, leadP)
 labels = getLabels(leadIM)
 labels2D = getLabels2D(leadIM)
 
