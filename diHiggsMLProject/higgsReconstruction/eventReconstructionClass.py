@@ -13,9 +13,10 @@ import copy
 
 class eventReconstruction:
     
-    def __init__ (self, _inputFile, _isTestRun = False):
+    def __init__ (self, _inputFile, _isDihiggsMC, _isTestRun = False):
         self.inputFileName = _inputFile
         self.isTestRun     = _isTestRun
+        self.isDihiggsMC   = _isDihiggsMC
 
         # Class Defaults
         self.transparency = 0.5  # transparency of plots
@@ -25,6 +26,8 @@ class eventReconstruction:
         self.minJetPt = 20.0 #GeV
         self.maxJetAbsEta = 2.5
         self.nJetsToStore = 4
+        self.requireTags = True
+        self.ptOrdered = True
 
         # Global Variables 
         self.outputDataForLearning = []
@@ -34,6 +37,10 @@ class eventReconstruction:
 
         self.cutflowDict = { 'All':0, 'Matchable':0, 'Fully Matched':0, '>= 1 Pair Matched':0}
         self.jetTagCategories = ['Incl',
+                                 '0jIncl', '0j0b',  
+                                 '1jIncl', '1j0b', '1j1b',  
+                                 '2jIncl', '2j0b', '2j1b', '2j2b', 
+                                 '3jIncl', '3j0b', '3j1b', '3j2b', '3j3b', 
                                  '4jIncl', '4j0b', '4j1b', '4j2b', '4j3b', '4j4b', 
                                  '5jIncl', '5j0b', '5j1b', '5j2b', '5j3b', '5j4b', '5j5b', 
                                  '6jIncl', '6j0b', '6j1b', '6j2b', '6j3b', '6j4b', '6j5b', '6j6b',
@@ -43,13 +50,21 @@ class eventReconstruction:
         self.eventCounterDict = { algorithm:{category:copy.deepcopy(self.cutflowDict) for category in self.jetTagCategories} for algorithm in self.pairingAlgorithms}
         self.nBTagsPerEvent  = []
         self.nJetsPerEvent   = []
+
+        # Per-Event Variables
         self.thisEventIsMatchable = False
         self.thisEventWasCorrectlyMatched = False
-        
+        self.nJets  = 0
+        self.nBTags = 0
+        self.quarkIndices  = []
+        self.jetIndices    = []
 
-        # Member Definition
+
+        # Branch Definitions
         self.delphesFile      = uproot.rootio.TObject
         self.l_genPID         = []
+        self.l_genD1          = []
+        self.l_genD2          = []
         self.l_genStatus      = []
         self.l_genPt          = []      
         self.l_genEta         = []
@@ -64,6 +79,38 @@ class eventReconstruction:
         self.l_missingET_phi  = []
         self.l_scalarHT       = []
 
+
+    ##############################################################
+    ##                           MAIN                           ##
+    ##############################################################
+
+    def runReconstruction(self):
+
+        self.initFileAndBranches()
+
+        for iEvt in range(0,self.delphesFile.fEntries):
+            # *** 0. Kick-out condition for testing
+            if iEvt > 40 and self.isTestRun is True:
+                continue
+            if iEvt%2000==0:
+                print("Analyzing event number",iEvt)
+
+
+            # *** 1. Get truth information
+            self.getTruthInformation( iEvt )
+
+            # *** 2. Get jet reco information
+            self.getRecoInformation( iEvt )
+            if (self.requireTags==True and self.nBTags < 4) or (self.requireTags==False and self.nJets < 4): continue 
+
+            # *** 3. Do some quark-to-jet truth matching
+            if self.isDihiggsMC == True:
+                matchedQuarksToJets, jetVectorDict, quarkVectorDict = self.truthToRecoMatching( iEvt )
+
+            # *** 4. Evaluate all pairing algorithms
+            #self.
+
+        return
     
     ##############################################################
     ##             FUNCTIONS TO SET/GET VARIABLES               ##
@@ -157,81 +204,79 @@ class eventReconstruction:
     ##                FUNCTIONS FOR INDEXING                    ##
     ##############################################################
 
-    def returnListOfTruthBQuarkIndicesByDaughters(self, _D1, _D2, _PID):
-        _bQuarkIndices = []
+    def returnListOfTruthBQuarkIndicesByDaughters(self, _iEvent):
     
         for iParticle in range(0, len(_D1)):
-            if _PID[iParticle]==25:
-                _daughter1 = _D1[iParticle]
-                _daughter2 = _D2[iParticle]
-                _daughter1_PID = _PID[daughter1]
-                _daughter2_PID = _PID[daughter2]
+            if self.PID[_iEvent][iParticle]==25:
+                _daughter1 = self.l_genD1[_iEvent][iParticle]
+                _daughter2 = self.l_genD2[_iEvent][iParticle]
+                _daughter1_PID = self.l_genPID[_iEvent][daughter1]
+                _daughter2_PID = self.l_genPID[_iEvent][daughter2]
                 #print('Event ',iEvt,'has higgs at position',iParticle,'with daughter1 (',daughter1,
                 #    ') of PID',daughter1_PID,'and daughter2 (',daughter2,') of PID',daughter2_PID)
                 if abs(_daughter1_PID) == 5 and abs(_daughter2_PID)==5:
-                    _bQuarkIndices.append(_daughter1)
-                    _bQuarkIndices.append(_daughter2)
+                    self.quarkIndices.append(_daughter1)
+                    self.quarkIndices.append(_daughter2)
     
-        return _bQuarkIndices
+        return 
 
 
-    def returnListOfTruthBQuarkIndicesByStatus(self, _status):
-        _bQuarkIndices = []
+    def returnListOfTruthBQuarkIndicesByStatus(self, _iEvent ):
 
-        for iParticle in range(0, len(_status)):
-            if _status[iParticle]==23:
-                _bQuarkIndices.append(iParticle)
+        for iParticle in range(0, len(self.l_genStatus[_iEvent]) ):
+            if self.l_genStatus[_iEvent][iParticle]==23:
+                self.quarkIndices.append(iParticle)
 
-        return _bQuarkIndices
+        return 
 
-    def returnNumberAndListOfJetIndicesPassingCuts(self, _jetPt, _jetEta, _jetMass, _jetBTag, _requireTags=False, _ptOrdered=False):
-        _jetIndices = []
-        _nJets = 0
-        _nBTags = 0
+    def returnNumberAndListOfJetIndicesPassingCuts(self, _iEvent):
+        self.nJets = 0
+        self.nBTags = 0
+        self.jetIndices = []
 
-        for iJet in range(0, len(_jetPt)): 
-            if _jetPt[iJet] > self.minJetPt and abs(_jetEta[iJet]) < self.maxJetAbsEta and _jetMass[iJet]>0: 
+        for iJet in range(0, len(self.l_jetPt[_iEvent])): 
+            if self.l_jetPt[_iEvent][iJet] > self.minJetPt and abs(self.l_jetEta[_iEvent][iJet]) < self.maxJetAbsEta and self.l_jetMass[_iEvent][iJet]>0: 
                 # surpringly some jets (<1%) have negative mass. filter these out
-                _nJets += 1
-                if not _requireTags:
-                    _jetIndices.append(iJet)
+                self.nJets += 1
+                if not self.requireTags:
+                    self.jetIndices.append(iJet)
                 
-                if _jetBTag[iJet] == 1:
-                    _nBTags += 1
-                    if _requireTags: #and len(_jetIndices)<4:
-                        if _ptOrdered:
+                if self.l_jetBTag[_iEvent][iJet] == 1:
+                    self.nBTags += 1
+                    if self.requireTags: #and len(self.jetIndices)<4:
+                        if self.ptOrdered:
                             _added = False
-                            for index in range(0, len(_jetIndices)):
-                                if _jetPt[iJet] > _jetPt[index] and _added==False:
-                                    _jetIndices.insert(index, iJet)
+                            for index in range(0, len(self.jetIndices)):
+                                if self.l_jetPt[_iEvent][iJet] > self.l_jetPt[_iEvent][index] and _added==False:
+                                    self.jetIndices.insert(index, iJet)
                                     _added = True
                             
                             if _added == False:
-                                _jetIndices.append(iJet)
+                                self.jetIndices.append(iJet)
                         else:
-                            _jetIndices.append(iJet)
+                            self.jetIndices.append(iJet)
         
             #if len(_jetIndices)==4:
             #    break
             
         #print (_jetIndices)
-        #print (_nJets, _nBTags, len(_jetIndices), [_jetPt[g] for g in _jetIndices])
+        #print (self.nJets, self.nBTags, len(_jetIndices), [_jetPt[g] for g in _jetIndices])
     
-        return _nJets, _nBTags, _jetIndices
+        return 
 
 
-    def getDictOfQuarksMatchedToJets(self, _quarkIndices, _jetIndices, _genPt, _genEta, _genPhi, _genMass, _jetPt, _jetEta, _jetPhi, _jetMass): 
+    def getDictOfQuarksMatchedToJets(self, _iEvent ): 
         _matchedQuarksToJets = {}
         _dictOfJetVectors = {}
         _dictOfQuarkVectors = {}
     
-        for iQuark in _quarkIndices:
-            tlv_quark = TLorentzVector.PtEtaPhiMassLorentzVector( _genPt[iQuark], _genEta[iQuark], _genPhi[iQuark], _genMass[iQuark])
+        for iQuark in self.quarkIndices:
+            tlv_quark = TLorentzVector.PtEtaPhiMassLorentzVector( self.l_genPt[_iEvent][iQuark], self.l_genEta[_iEvent][iQuark], self.l_genPhi[_iEvent][iQuark], self.l_genMass[_iEvent][iQuark])
             if iQuark not in _dictOfQuarkVectors.keys():
                 _dictOfQuarkVectors[iQuark] = tlv_quark
             
-            for iJet in _jetIndices:
-                tlv_jet = TLorentzVector.PtEtaPhiMassLorentzVector( _jetPt[iJet], _jetEta[iJet], _jetPhi[iJet], _jetMass[iJet])
+            for iJet in self.jetIndices:
+                tlv_jet = TLorentzVector.PtEtaPhiMassLorentzVector( self.l_jetPt[_iEvent][iJet], self.l_jetEta[_iEvent][iJet], self.l_jetPhi[_iEvent][iJet], self.l_jetMass[_iEvent][iJet])
                 if iJet not in _dictOfJetVectors.keys():
                     _dictOfJetVectors[iJet] = tlv_jet
         
@@ -384,38 +429,38 @@ class eventReconstruction:
     ##                FUNCTIONS FOR EFFICIENCY                  ##
     ##############################################################
 
-    def returnJetTagLabels( self, _nJets, _nBTags):
+    def returnJetTagLabels( self ):
 
         # every event is inclusive
         _categoryLabels = ['Incl']    
     
         # split into tag-inclusive bins, 6j means >= 6 jets
-        if _nJets == 4:
+        if self.nJets == 4:
             _categoryLabels.append('4jIncl')
-        elif _nJets == 5:
+        elif self.nJets == 5:
             _categoryLabels.append('5jIncl')
-        elif _nJets == 6:
+        elif self.nJets == 6:
             _categoryLabels.append('6jIncl')
-        elif _nJets >= 7:
+        elif self.nJets >= 7:
             _categoryLabels.append('7jIncl')
             
         # split into tag bins, 4b means >= 4 tags
-        _jetLabel = str(_nJets) if _nJets <= 7 else str(7)
-        _tagLabel = str(_nBTags) if _nBTags <= 7 else str(7)
+        _jetLabel = str(self.nJets) if self.nJets <= 7 else str(7)
+        _tagLabel = str(self.nBTags) if self.nBTags <= 7 else str(7)
         _categoryLabels.append( _jetLabel+'j'+_tagLabel+'b' )
         
         return _categoryLabels
 
 
-    def countEvents( self, _cutflowBin, _nJets, _nBTags):
+    def countEvents( self, _cutflowBin ):
 
-        _categoryLabels = returnJetTagLabels(_nJets, _nBTags)
-        for iAlgorithm in _evtCounterDict:
+        _categoryLabels = self.returnJetTagLabels()
+        for iAlgorithm in self.eventCounterDict:
             for iLabel in _categoryLabels:
-                self.evtCounterDict[iAlgorithm][iLabel][_cutflowBin] += 1
+                self.eventCounterDict[iAlgorithm][iLabel][_cutflowBin] += 1
         
     
-    def evaluatePairingEfficiency( self, _quarkToJetDict, _jetPair1, _jetPair2, _nJets, _nBTags, _algorithm):
+    def evaluatePairingEfficiency( self, _quarkToJetDict, _jetPair1, _jetPair2, _algorithm):
                 
         # Organize quark-to-jet pairs from truth into directly comparable tuples
         _indexList = list( _quarkToJetDict.values() ) 
@@ -424,13 +469,13 @@ class eventReconstruction:
         _indexPair2 = _orderedIndexTuple[1]
         
         # Do some global counting
-        _categoryLabels = returnJetTagLabels(_nJets, _nBTags)
+        _categoryLabels = self.returnJetTagLabels()
         for iLabel in _categoryLabels:
             if _jetPair1 == _indexPair1 and _jetPair2 == _indexPair2:
-                self.evtCounterDict[_algorithm][iLabel]['Fully Matched'] += 1
+                self.eventCounterDict[_algorithm][iLabel]['Fully Matched'] += 1
          
             if _jetPair1 == _indexPair1 or _jetPair2 == _indexPair2:
-                self.evtCounterDict[_algorithm][iLabel]['>= 1 Pair Matched'] += 1
+                self.eventCounterDict[_algorithm][iLabel]['>= 1 Pair Matched'] += 1
         
         return 
 
@@ -439,13 +484,13 @@ class eventReconstruction:
     def printEventCounterInfo( self, _algorithm, _catTag ):
         print('====================================================')
         print("!!!! Event Counter Info For " + _algorithm + ", " + _catTag)
-        print("Number of Events:", self.evtCounterDict[_algorithm][_catTag]['All'])
-        print("Number of Events with 4 truth-matchable jets:", self.evtCounterDict[_algorithm][_catTag]['Matchable'])
-        print("Number of Events Fully Matched:", self.evtCounterDict[_algorithm][_catTag]['Fully Matched'])
-        print("Number of Events with >= 1 Pair Matched:", self.evtCounterDict[_algorithm][_catTag]['>= 1 Pair Matched'])
-        if _evtCounterDict[_algorithm][_catTag]['Matchable'] > 0:
-            print('Efficiency For Fully Matched: ',round( 100*float(_evtCounterDict[_algorithm][_catTag]['Fully Matched']/_evtCounterDict[_algorithm][_catTag]['Matchable']) , 2),'%')
-            print('Efficiency For >= 1 Pair Matched: ',round( 100*float(_evtCounterDict[_algorithm][_catTag]['>= 1 Pair Matched']/_evtCounterDict[_algorithm][_catTag]['Matchable']) , 2),'%')
+        print("Number of Events:", self.eventCounterDict[_algorithm][_catTag]['All'])
+        print("Number of Events with 4 truth-matchable jets:", self.eventCounterDict[_algorithm][_catTag]['Matchable'])
+        print("Number of Events Fully Matched:", self.eventCounterDict[_algorithm][_catTag]['Fully Matched'])
+        print("Number of Events with >= 1 Pair Matched:", self.eventCounterDict[_algorithm][_catTag]['>= 1 Pair Matched'])
+        if self.eventCounterDict[_algorithm][_catTag]['Matchable'] > 0:
+            print('Efficiency For Fully Matched: ',round( 100*float(self.eventCounterDict[_algorithm][_catTag]['Fully Matched']/self.eventCounterDict[_algorithm][_catTag]['Matchable']) , 2),'%')
+            print('Efficiency For >= 1 Pair Matched: ',round( 100*float(self.eventCounterDict[_algorithm][_catTag]['>= 1 Pair Matched']/self.eventCounterDict[_algorithm][_catTag]['Matchable']) , 2),'%')
  
         return
 
@@ -454,13 +499,13 @@ class eventReconstruction:
         _fullyMatchedDict = {}
         _onePairMatchedDict = {}
     
-        for _iAlgorithm in self.evtCounterDict:
+        for _iAlgorithm in self.eventCounterDict:
             _fullyMatchedDict[_iAlgorithm] = {}
             _onePairMatchedDict[_iAlgorithm] = {}
-            for _iCategory in self.evtCounterDict[_iAlgorithm]:
-                if self.evtCounterDict[_iAlgorithm][_iCategory]['Matchable'] > 0:
-                    _fullyMatchedEff  = round( 100*float(self.evtCounterDict[_iAlgorithm][_iCategory]['Fully Matched']/self.evtCounterDict[_iAlgorithm][_iCategory]['Matchable']), 2)
-                    _onePairMatchedEff = round( 100*float(self.evtCounterDict[_iAlgorithm][_iCategory]['>= 1 Pair Matched']/self.evtCounterDict[_iAlgorithm][_iCategory]['Matchable']), 2)
+            for _iCategory in self.eventCounterDict[_iAlgorithm]:
+                if self.eventCounterDict[_iAlgorithm][_iCategory]['Matchable'] > 0:
+                    _fullyMatchedEff  = round( 100*float(self.eventCounterDict[_iAlgorithm][_iCategory]['Fully Matched']/self.eventCounterDict[_iAlgorithm][_iCategory]['Matchable']), 2)
+                    _onePairMatchedEff = round( 100*float(self.eventCounterDict[_iAlgorithm][_iCategory]['>= 1 Pair Matched']/self.eventCounterDict[_iAlgorithm][_iCategory]['Matchable']), 2)
                     _fullyMatchedDict[_iAlgorithm][_iCategory] = _fullyMatchedEff
                     _onePairMatchedDict[_iAlgorithm][_iCategory] = _onePairMatchedEff
                     #print(_algorithm, _iCategory)
@@ -484,7 +529,7 @@ class eventReconstruction:
         return _variableNameList
 
 
-    def calculateVariablesForBDT( self, _jetPair1, _jetPair2, _jetVectorDict, _nJets, _nBTags, _met, _met_phi, _scalarHT, _addLowLevel = False):
+    def calculateVariablesForBDT( self, _jetPair1, _jetPair2, _jetVectorDict, _met, _met_phi, _scalarHT, _addLowLevel = False):
         _variableList = []
     
         _tlv_h1_j0 = _jetVectorDict[ _jetPair1[0] ]
@@ -508,7 +553,7 @@ class eventReconstruction:
         print ("for h2, dPhi(j2, j3): ",  _tlv_h2_j2.delta_phi( _tlv_h2_j3 ))
         #print ("MET, met_phi: ", _met[0], _met_phi[0])
         #print ("Scalar HT: ", _scalarHT[0])
-        #print ("nJets, nBTags: ", _nJets, _nBTags)
+        #print ("nJets, nBTags: ", self.nJets, self.nBTags)
         """
         _nDigits = 3
         
@@ -518,7 +563,7 @@ class eventReconstruction:
                           _tlv_h1_j0.delta_r(_tlv_h1_j1), _tlv_h2_j2.delta_r(_tlv_h2_j3), 
                           _tlv_h1_j0.delta_phi(_tlv_h1_j1), _tlv_h2_j2.delta_phi(_tlv_h2_j3), 
                           _met[0], _met_phi[0], _scalarHT[0], 
-                          _nJets, _nBTags,
+                          self.nJets, self.nBTags,
                           _tlv_h1_j0.pt, _tlv_h1_j1.pt, _tlv_h2_j2.pt, _tlv_h2_j3.pt, 
                           _tlv_h1_j0.eta, _tlv_h1_j1.eta, _tlv_h2_j2.eta, _tlv_h2_j3.eta,
                           _tlv_h1_j0.phi, _tlv_h1_j1.phi, _tlv_h2_j2.phi, _tlv_h2_j3.phi,
@@ -534,24 +579,46 @@ class eventReconstruction:
 
 
     ##############################################################
-    ##       FUNCTIONS FOR RUNNING RECONSTRUCTION (Main)        ##
+    ##           FUNCTIONS FOR RUNNING RECONSTRUCTION           ##
     ##############################################################
 
-    def runReconstruction(self):
 
-        self.initFileAndBranches()
+    def truthToRecoMatching( self, _iEvent, ):
 
-        for iEvt in range(0,self.delphesFile.fEntries):
-            # *** 0. Kick-out condition for testing
-            if iEvt > 40 and self.isTestRun is True:
-                continue
-            if iEvt%2000==0:
-                print("Analyzing event number",iEvt)
+        self.thisEventIsMatchable = False
+        self.thisEventWasCorrectlyMatched = False
+        _matchedQuarksToJets, _jetVectorDict, _quarkVectorDict = self.getDictOfQuarksMatchedToJets( _iEvent )
+        # Check if a) all matches have one and only match between quark and jet, b) four jets are matched, c) 4 unique reconstructed jets are selected
+        _jetIndexList = [recoIndex[0] for recoIndex in _matchedQuarksToJets.values()]
+        if all(len(matchedJets) == 1 for matchedJets in _matchedQuarksToJets.values()) and len(_matchedQuarksToJets)==4  and (len(set(_jetIndexList)) == len(_jetIndexList)):     
+            self.thisEventIsMatchable = True
+            self.countEvents( 'Matchable' )
 
+        return _matchedQuarksToJets, _jetVectorDict, _quarkVectorDict
 
-        return
+    def getRecoInformation( self, _iEvent ):
+        self.returnNumberAndListOfJetIndicesPassingCuts( _iEvent )
+        self.nJetsPerEvent.append( self.nJets )
+        self.nBTagsPerEvent.append( self.nBTags  )
+        self.countEvents( 'All' )
+        
+        return 
 
+    def getTruthInformation( self, _iEvent ):
 
+        self.quarkIndices = []       
+        # Return if QCD --> no truth to assign
+        if self.isDihiggsMC == False:
+            return
+
+        self.returnListOfTruthBQuarkIndicesByStatus( _iEvent )   
+        #self.returnListOfTruthBQuarkIndicesByDaughters( _iEvent )   
+
+        if len( self.quarkIndices ) != 4:
+            print ("!!! WARNING: Event = {0} did not find 4 truth b-quarks. Only found {1} !!!".format(iEvent, len(self.quarkIndices)))
+            
+        return 
+    
 
     def initFileAndBranches( self ):
 
@@ -574,3 +641,25 @@ class eventReconstruction:
         self.l_missingET_phi  = uproot.tree.TBranchMethods.array(self.delphesFile['MissingET']['MissingET.Phi']).tolist()
         self.l_scalarHT       = uproot.tree.TBranchMethods.array(self.delphesFile['ScalarHT']['ScalarHT.HT']).tolist()
         print("Finished loading branches...")
+
+
+"""
+ # *** 4. Evaluate all pairing algorithms
+    for iAlgorithm in pairingAlgorithms:
+        # ** A. Fill algorithm metric for correct pairing (regardless if chosen by metric)
+        if thisEventIsMatchable == True:
+            fillVariablePlotsForCorrectPairing(iEvt, plottingData, [jetVectorDict[matchedJet[0]] for matchedJet in matchedQuarksToJets.values()], iAlgorithm)
+
+        # ** B. Pick two jet pairs based on algorithm
+        jetPair1, jetPair2, pairingMetric = selectPairsViaMatchingAlgorithm(plottingData, jetVectorDict, iAlgorithm)
+    
+        # ** C. Evaluate efficiency of pairing algorithm
+        if thisEventIsMatchable:
+            evaluatePairingEfficiency(eventCounterDict, matchedQuarksToJets, jetPair1, jetPair2, nJets, nBTags, iAlgorithm)
+    
+        # ** D. Calculate and save variables for BDT training for single algorithm set by saveAlgorithm
+        if iAlgorithm == saveAlgorithm: 
+            variablesForBDT = calculateVariablesForBDT(jetPair1, jetPair2, jetVectorDict, nJets, nBTags, 
+                                                        l_missingET_met[iEvt], l_missingET_phi[iEvt], l_scalarHT[iEvt])
+            outputDataForLearning.append(variablesForBDT)
+"""
