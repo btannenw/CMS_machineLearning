@@ -6,17 +6,18 @@ import uproot, uproot_methods
 import uproot_methods.classes.TLorentzVector as TLorentzVector
 import matplotlib.pyplot as plt
 import numpy as np
-import itertools
-import csv
-import copy
+import copy, csv, os, itertools
 
 
 class eventReconstruction:
     
-    def __init__ (self, _inputFile, _isDihiggsMC, _isTestRun = False):
+    def __init__ (self, _datasetName, _inputFile, _isDihiggsMC, _isTestRun = False):
+        self.datasetName   = _datasetName
         self.inputFileName = _inputFile
         self.isTestRun     = _isTestRun
         self.isDihiggsMC   = _isDihiggsMC
+        if os.path.isdir( self.datasetName )==False:
+            os.mkdir( self.datasetName )
 
         # Class Defaults
         self.transparency = 0.5  # transparency of plots
@@ -28,6 +29,8 @@ class eventReconstruction:
         self.nJetsToStore = 4
         self.requireTags = True
         self.ptOrdered = True
+        self.saveAlgorithm = 'equalDijetMass'
+        self.saveLowLevelVariablesForTraining = True
 
         # Global Variables 
         self.outputDataForLearning = []
@@ -58,7 +61,9 @@ class eventReconstruction:
         self.nBTags = 0
         self.quarkIndices  = []
         self.jetIndices    = []
-
+        self.matchedQuarksToJets = {}
+        self.jetVectorDict = {}
+        self.quarkVectorDict = {}
 
         # Branch Definitions
         self.delphesFile      = uproot.rootio.TObject
@@ -104,14 +109,54 @@ class eventReconstruction:
             if (self.requireTags==True and self.nBTags < 4) or (self.requireTags==False and self.nJets < 4): continue 
 
             # *** 3. Do some quark-to-jet truth matching
-            if self.isDihiggsMC == True:
-                matchedQuarksToJets, jetVectorDict, quarkVectorDict = self.truthToRecoMatching( iEvt )
+            self.truthToRecoMatching( iEvt )
 
             # *** 4. Evaluate all pairing algorithms
-            #self.
+            self.evaluatePairingAlgorithms( iEvt )
+
+        # *** 5. Store output data in .csv for later usage
+        self.writeDataForTraining()
+
+        print( "Finished processing {0} events...".format(self.delphesFile.fEntries) )
 
         return
+
+
+    def printAllAlgorithmEventTotals(self, _jetTagCategories):
+
+        # *** 1. Print event counter info 
+        for algorithm in self.pairingAlgorithms:
+            for jetTagCat in _jetTagCategories:
+                self.printEventCounterInfo(algorithm, jetTagCat)
     
+        return
+
+
+    def makeAlgorithmComparisonPlots(self):
+
+        # *** 1. Save general plots
+        self.plotOneHistogram(self.nJetsPerEvent, 0, 'Number of Jets Per Event', 'Number of Jets', 0, 10, 11 )
+        self.plotOneHistogram(self.nBTagsPerEvent, 1, 'Number of b-Tagged Jets Per Event', 'Number of b-Tags', 0, 10, 11 )
+
+        # *** 2. Save algorithm-specific plots
+        for pairingAlgorithm in self.pairingAlgorithms:
+            # ** A. Get plotting options, e.g. n_bins, xmin/xmax, title, etc
+            _plotOpts = self.returnPlottingOptions( pairingAlgorithm )
+
+            # ** B. save plots with truth-matching information for dihiggs MC
+            if self.isDihiggsMC:
+                self.compareManyHistograms( pairingAlgorithm, ['All', 'Matchable'], 2, 'All Jet Pairs ' + _plotOpts[0], 'Jet Pair ' + _plotOpts[1], int(_plotOpts[2]), int(_plotOpts[3]), int(_plotOpts[4]) )
+                self.compareManyHistograms( pairingAlgorithm, ['Best', 'Best+Matchable', 'Correct'], 3, 'Best Jet Pair ' + _plotOpts[0], 'Jet Pair ' + _plotOpts[1], int(_plotOpts[2]), int(_plotOpts[3]), int(_plotOpts[4]) )
+                self.compareManyHistograms( pairingAlgorithm, ['All', 'Matchable', 'Correct', 'Best', 'Best+Matchable'], 5, 'Best Jet Pair ' + _plotOpts[0], 'Jet Pair ' + _plotOpts[1], int(_plotOpts[2]), int(_plotOpts[3]), int(_plotOpts[4]), _normed=True)
+            # ** C. save plots without if QCD
+            else:
+                self.compareManyHistograms( pairingAlgorithm, ['All', 'Best'], 2, 'All Jet Pairs ' + _plotOpts[0], 'Jet Pair ' + _plotOpts[1], int(_plotOpts[2]), int(_plotOpts[3]), int(_plotOpts[4]) )
+                self.compareManyHistograms( pairingAlgorithm, ['All', 'Best'], 5, 'Best Jet Pair ' + _plotOpts[0], 'Jet Pair ' + _plotOpts[1], int(_plotOpts[2]), int(_plotOpts[3]), int(_plotOpts[4]), _normed=True)
+        
+        
+        return
+
+
     ##############################################################
     ##             FUNCTIONS TO SET/GET VARIABLES               ##
     ##############################################################
@@ -120,31 +165,26 @@ class eventReconstruction:
         self.transparency = _userTransparency
     def getTransparency(self):
         print ("Transparency: ", self.transparency)
-        return self.transparency
 
     def setNJetsToStore(self, _userNJetsToStore):
         self.nJetsToStore = _userNJetsToStore
     def getNJetsToStore(self):
         print ("N_Jets To Store: ", self.nJetsToStore)
-        return self.nJetsToStore
         
     def setQuarkToJetCutDR(self, _userQuarkToJetCutDR):
         self.dR_cut_quarkToJet = _userQuarkToJetCutDR
     def getQuarkToJetCutDR(self):
         print ("DeltaR Cut Between Jet and Quark: ", self.dR_cut_quarkToJet)
-        return self.dR_cut_quarkToJet
 
     def setHiggsMass(self, _userMassHiggs):
         self.mass_higgs = _userMassHiggs
     def getHiggsMass(self):
         print ("Higgs Mass: ", self.mass_higgs)
-        return self.mass_higgs
 
     def setHiggsWidth(self, _userWidthHiggs):
         self.width_higgs = _userWidthHiggs
     def getHiggsWidth(self):
         print ("Higgs Width: ", self.width_higgs)
-        return self.width_higgs
 
     def setJetPtEtaCuts(self, _userJetPtCut, _userJetEtaCut):
         self.minJetPt = _userJetPtCut #GeV
@@ -152,12 +192,82 @@ class eventReconstruction:
     def getJetPtEtaCuts(self):
         print ("Minimum Jet pT [GeV]: ", self.minJetPt)
         print ("Maximum Jet |eta|: ", self.maxJetAbsEta)
-        return self.minJetPt, self.maxJetAbsEta
+
+    def setSaveAlgorithm(self, _userSaveAlgorithm):
+        if _userSaveAlgorithm not in self.pairingAlgorithms:
+            print ("!!! WARNING, {0} not a valid algorithm for saving. Returning to default: {0} . Please try again.".format(_userSaveAlgorithm, self.saveAlgorithm))
+        else:
+            self.saveAlgorithm = _userSaveAlgorithm
+    def getSaveAlgorithm(self):
+        print ("Algorithm saved for training: ", self.saveAlgorithm)
+
+    def setSaveLowLevelVariables(self, _userSaveLowLevel):
+        self.saveLowLevelVariablesForTraining = bool(_userSaveLowLevel)
+    def getSaveLowLevelVariables(self):
+        print ("Save low-level variables for training: ", self.saveLowLevelVariablesForTraining)
+
+
+    def printAllOptions(self):
+        self.getTransparency()
+        self.getNJetsToStore()
+        self.getQuarkToJetCutDR()
+        self.getHiggsMass()
+        self.getHiggsWidth()
+        self.getJetPtEtaCuts()
+        self.getSaveAlgorithm()
+        self.getHiggsWidth()
+        
 
 
     ##############################################################
     ##                FUNCTIONS FOR PLOTTING                    ##
     ##############################################################
+    def returnPlottingOptions(self, _pairingAlgorithm):
+        _plotOpts = []
+
+        if _pairingAlgorithm == 'minHarmonicMeanDeltaR':
+            _plotOpts = ['Delta R', 'Delta R', 0, 5.0, 100]
+        elif _pairingAlgorithm == 'closestDijetMassesToHiggs':
+            _plotOpts = ['Higgs Mass Diff', 'Higgs Mass Diff', 0, 50.0, 50]
+        elif _pairingAlgorithm == 'equalDijetMass':
+            _plotOpts = ['Dijet Mass Diff', 'Abs Dijet Mass Diff [GeV]', -0.0, 300.0, 100]
+        elif _pairingAlgorithm == 'equalDeltaR':
+            _plotOpts = ['Delta R', 'Delta R(h1, h2)', 0, 5.0, 100]
+        elif _pairingAlgorithm == 'dijetMasses':
+            _plotOpts = ['Dijet Mass', 'Dijet Mass [GeV]', 0, 600.0, 100]
+
+        return _plotOpts
+
+    def plotOneHistogram(self, _arr, _nPlot, _title, _xtitle, _xMin, _xMax, _nBins, _normed=False):
+        #mean_arr = np.mean(arr)
+        #stdev_arr = np.std(arr)
+        #nEntries_arr = len(arr)
+        
+        #s1 = "Higgs Mass Reconstructed from 4 b-tagged jets:\n" \
+            #     "entries = {}, mean = {:.4F}, std dev = {:.4F}".format(nEntries_arr, mean_arr, stdev_arr)
+        
+        plt.figure(_nPlot)
+        plt.title(_title)
+        plt.xlabel(_xtitle)
+        _bins = np.linspace(_xMin, _xMax, _nBins)
+        plt.hist(_arr, _bins, alpha=self.transparency, normed=_normed)
+        #plt.legend(loc='upper right')
+        #plt.text(10, 10, s1)
+
+        # store figure copy for later saving
+        fig = plt.gcf()
+    
+        # draw interactively
+        plt.show()
+    
+        # save an image files
+        _scope    = _title.split(' ')[0].lower()
+        _variable = _xtitle.lstrip('Jet Pair').replace(' ','').replace('[GeV]','')
+        _filename  = self.datasetName + '/' + _scope + '_' + _variable
+        if _normed:
+            _filename = _filename + '_norm'
+        fig.savefig( _filename+'.png' )
+
 
     def compareManyHistograms(self, _pairingAlgorithm, _labels, _nPlot, _title, _xtitle, _xMin, _xMax, _nBins, _normed=False):
         #_mean_arrAll     = np.mean(_arrAll)
@@ -192,7 +302,7 @@ class eventReconstruction:
         _scope    = _title.split(' ')[0].lower()
         _variable = _xtitle.lstrip('Jet Pair').replace(' ','').replace('[GeV]','')
         _allLabels = ''.join(_labels)
-        _filename  = _scope + '_' + pairingAlgorithm + '_' + _allLabels + '_' + _variable
+        _filename  = self.datasetName + '/' + _scope + '_' + _pairingAlgorithm + '_' + _allLabels + '_' + _variable
         if _normed:
             _filename = _filename + '_norm'
         fig.savefig( _filename+'.png' )
@@ -266,30 +376,27 @@ class eventReconstruction:
 
 
     def getDictOfQuarksMatchedToJets(self, _iEvent ): 
-        _matchedQuarksToJets = {}
-        _dictOfJetVectors = {}
-        _dictOfQuarkVectors = {}
     
         for iQuark in self.quarkIndices:
-            tlv_quark = TLorentzVector.PtEtaPhiMassLorentzVector( self.l_genPt[_iEvent][iQuark], self.l_genEta[_iEvent][iQuark], self.l_genPhi[_iEvent][iQuark], self.l_genMass[_iEvent][iQuark])
-            if iQuark not in _dictOfQuarkVectors.keys():
-                _dictOfQuarkVectors[iQuark] = tlv_quark
+            _tlv_quark = TLorentzVector.PtEtaPhiMassLorentzVector( self.l_genPt[_iEvent][iQuark], self.l_genEta[_iEvent][iQuark], self.l_genPhi[_iEvent][iQuark], self.l_genMass[_iEvent][iQuark])
+            if iQuark not in self.quarkVectorDict.keys():
+                self.quarkVectorDict[iQuark] = _tlv_quark
             
             for iJet in self.jetIndices:
-                tlv_jet = TLorentzVector.PtEtaPhiMassLorentzVector( self.l_jetPt[_iEvent][iJet], self.l_jetEta[_iEvent][iJet], self.l_jetPhi[_iEvent][iJet], self.l_jetMass[_iEvent][iJet])
-                if iJet not in _dictOfJetVectors.keys():
-                    _dictOfJetVectors[iJet] = tlv_jet
+                _tlv_jet = TLorentzVector.PtEtaPhiMassLorentzVector( self.l_jetPt[_iEvent][iJet], self.l_jetEta[_iEvent][iJet], self.l_jetPhi[_iEvent][iJet], self.l_jetMass[_iEvent][iJet])
+                if iJet not in self.jetVectorDict.keys():
+                    self.jetVectorDict[iJet] = _tlv_jet
         
                 # skip jets
-                if tlv_quark.delta_r( tlv_jet) > self.dR_cut_quarkToJet:
+                if _tlv_quark.delta_r( _tlv_jet) > self.dR_cut_quarkToJet:
                     continue
 
-                if iQuark not in _matchedQuarksToJets.keys():
-                    _matchedQuarksToJets.update({iQuark:[iJet]})
+                if iQuark not in self.matchedQuarksToJets.keys():
+                    self.matchedQuarksToJets.update({iQuark:[iJet]})
                 else:
-                    _matchedQuarksToJets[iQuark].append(iJet)
+                    self.matchedQuarksToJets[iQuark].append(iJet)
 
-        return _matchedQuarksToJets, _dictOfJetVectors, _dictOfQuarkVectors
+        return 
 
 
     ##############################################################
@@ -331,7 +438,7 @@ class eventReconstruction:
         _mass_pair2 = ( _jetVectorDict[_jetPairTuple[2]] + _jetVectorDict[_jetPairTuple[3]] ).mass 
         
         # calculate the quadrature sum of higgs mass diff and divide by reco higgs width
-        _quadratureMassDifference = np.sqrt( ( (_mass_pair1 - mass_higgs) / width_higgs )**2 + ( (_mass_pair2 - mass_higgs) / width_higgs )**2 )
+        _quadratureMassDifference = np.sqrt( ( (_mass_pair1 - self.mass_higgs) / self.width_higgs )**2 + ( (_mass_pair2 - self.mass_higgs) / self.width_higgs )**2 )
         #print(_jetPairTuple, _quadratureMassDifference, _massDiff_pair1, _massDiff_pair2)
         
         return _quadratureMassDifference
@@ -362,29 +469,29 @@ class eventReconstruction:
         return _bothDijetMasses
         
         
-    def returnMetric( self, _pairingAlgorithm, _sortedTuple, _jetVectorDict):
+    def returnMetric( self, _pairingAlgorithm, _sortedTuple, _jetVectorDict ):
         # calculate metric depending on chosen algorithm
         _metric = []
         
         if _pairingAlgorithm == "minHarmonicMeanDeltaR":
-            _metric = getHarmonicMeanDeltaR(_sortedTuple, _jetVectorDict)
+            _metric = self.getHarmonicMeanDeltaR(_sortedTuple, _jetVectorDict)
         elif _pairingAlgorithm == "closestDijetMassesToHiggs":
-            _metric = getHiggsMassDifference(_sortedTuple, _jetVectorDict)
+            _metric = self.getHiggsMassDifference(_sortedTuple, _jetVectorDict)
         elif _pairingAlgorithm == "equalDijetMass":
-            _metric = getDijetMassDifference(_sortedTuple, _jetVectorDict)
+            _metric = self.getDijetMassDifference(_sortedTuple, _jetVectorDict)
         elif _pairingAlgorithm == "equalDeltaR":
-            _metric = getEqualDeltaR(_sortedTuple, _jetVectorDict)
+            _metric = self.getEqualDeltaR(_sortedTuple, _jetVectorDict)
         elif _pairingAlgorithm == "dijetMasses":
-            _metric = getBothDijetMasses(_sortedTuple, _jetVectorDict)
+            _metric = self.getBothDijetMasses(_sortedTuple, _jetVectorDict)
             
         _metric = _metric if type(_metric)==list else [_metric]
         return _metric
 
 
-    def selectPairsViaMatchingAlgorithm( self, _jetVectorDict, _pairingAlgorithm):
+    def selectPairsViaMatchingAlgorithm( self, _pairingAlgorithm):
 
         # make list of pairs from [n choose 2] where n is number of jets
-        _jetPairs = list(itertools.combinations(_jetVectorDict.keys(),2))
+        _jetPairs = list(itertools.combinations(self.jetVectorDict.keys(),2))
         _doubleJetPairs = {}
 
         # loop over jet pairs
@@ -397,17 +504,17 @@ class eventReconstruction:
 
                 # add double pairing to dictionary if not already present. sorting removes positional ambiguity
                 if _sortedTuple not in _doubleJetPairs.keys():
-                    _metric = returnMetric(_pairingAlgorithm, _sortedTuple, _jetVectorDict)
+                    _metric = self.returnMetric(_pairingAlgorithm, _sortedTuple, self.jetVectorDict)
 
                     _doubleJetPairs[_sortedTuple] = _metric
                     self.plottingData[_pairingAlgorithm]['All'].extend( _metric )
-                    if thisEventIsMatchable:
+                    if self.thisEventIsMatchable:
                         self.plottingData[_pairingAlgorithm]['Matchable'].extend( _metric )
 
         # sort output dict and find minimal value
         _bestPairing = sorted(_doubleJetPairs.items(), key=lambda _pairingAndMetric: _pairingAndMetric[1][0])[0]
         self.plottingData[_pairingAlgorithm]['Best'].extend( _bestPairing[1] )   
-        if thisEventIsMatchable:
+        if self.thisEventIsMatchable:
             # fill algorithm-selected lists for plotting
             self.plottingData[_pairingAlgorithm]['Best+Matchable'].extend( _bestPairing[1] )
 
@@ -417,7 +524,7 @@ class eventReconstruction:
 
     def fillVariablePlotsForCorrectPairing( self, iEvt, _matchedJetVector, _pairingAlgorithm):
         _correctTuple = (0, 1, 2, 3)
-        _metric = returnMetric(_pairingAlgorithm, _correctTuple, _matchedJetVector)
+        _metric = self.returnMetric(_pairingAlgorithm, _correctTuple, _matchedJetVector)
         self.plottingData[_pairingAlgorithm]['Correct'].extend( _metric )
         if _metric[0]==0:
             print (iEvt)
@@ -460,10 +567,10 @@ class eventReconstruction:
                 self.eventCounterDict[iAlgorithm][iLabel][_cutflowBin] += 1
         
     
-    def evaluatePairingEfficiency( self, _quarkToJetDict, _jetPair1, _jetPair2, _algorithm):
+    def evaluatePairingEfficiency( self, _jetPair1, _jetPair2, _algorithm):
                 
         # Organize quark-to-jet pairs from truth into directly comparable tuples
-        _indexList = list( _quarkToJetDict.values() ) 
+        _indexList = list( self.matchedQuarksToJets.values() ) 
         _orderedIndexTuple = sorted( ( tuple(sorted( (_indexList[0][0], _indexList[1][0]) )) , tuple(sorted( (_indexList[2][0], _indexList[3][0]) )) ) )
         _indexPair1 = _orderedIndexTuple[0]
         _indexPair2 = _orderedIndexTuple[1]
@@ -521,7 +628,7 @@ class eventReconstruction:
 
     def createOutputVariableList( self ):
         _variableNameList = ['hh_mass', 'h1_mass', 'h2_mass', 'hh_pt', 'h1_pt', 'h2_pt', 'deltaR(h1, h2)', 'deltaR(h1 jets)', 'deltaR(h2 jets)', 'deltaPhi(h1 jets)', 'deltaPhi(h2 jets)', 'met', 'met_phi', 'scalarHT', 'nJets', 'nBTags']
-        _jetVariables = ['pt', 'eta', 'phi', 'mass', 'px', 'py', 'pz', 'energy']
+        _jetVariables = ['pt', 'eta', 'phi', 'mass', 'px', 'py', 'pz', 'energy', 'btag']
     
         for _variable in _jetVariables:
             _variableNameList.extend( ['jet'+str(_iJet)+'_'+str(_variable) for _iJet in range(1,self.nJetsToStore+1)])
@@ -529,13 +636,13 @@ class eventReconstruction:
         return _variableNameList
 
 
-    def calculateVariablesForBDT( self, _jetPair1, _jetPair2, _jetVectorDict, _met, _met_phi, _scalarHT, _addLowLevel = False):
+    def calculateVariablesForBDT( self, _iEvent, _jetPair1, _jetPair2 ):
         _variableList = []
     
-        _tlv_h1_j0 = _jetVectorDict[ _jetPair1[0] ]
-        _tlv_h1_j1 = _jetVectorDict[ _jetPair1[1] ]
-        _tlv_h2_j2 = _jetVectorDict[ _jetPair2[0] ]
-        _tlv_h2_j3 = _jetVectorDict[ _jetPair2[1] ]
+        _tlv_h1_j0 = self.jetVectorDict[ _jetPair1[0] ]
+        _tlv_h1_j1 = self.jetVectorDict[ _jetPair1[1] ]
+        _tlv_h2_j2 = self.jetVectorDict[ _jetPair2[0] ]
+        _tlv_h2_j3 = self.jetVectorDict[ _jetPair2[1] ]
         _tlv_h1 = _tlv_h1_j0 + _tlv_h1_j1
         _tlv_h2 = _tlv_h2_j2 + _tlv_h2_j3
 
@@ -562,18 +669,20 @@ class eventReconstruction:
                           _tlv_h1.delta_r(_tlv_h2), 
                           _tlv_h1_j0.delta_r(_tlv_h1_j1), _tlv_h2_j2.delta_r(_tlv_h2_j3), 
                           _tlv_h1_j0.delta_phi(_tlv_h1_j1), _tlv_h2_j2.delta_phi(_tlv_h2_j3), 
-                          _met[0], _met_phi[0], _scalarHT[0], 
-                          self.nJets, self.nBTags,
-                          _tlv_h1_j0.pt, _tlv_h1_j1.pt, _tlv_h2_j2.pt, _tlv_h2_j3.pt, 
-                          _tlv_h1_j0.eta, _tlv_h1_j1.eta, _tlv_h2_j2.eta, _tlv_h2_j3.eta,
-                          _tlv_h1_j0.phi, _tlv_h1_j1.phi, _tlv_h2_j2.phi, _tlv_h2_j3.phi,
-                          _tlv_h1_j0.mass, _tlv_h1_j1.mass, _tlv_h2_j2.mass, _tlv_h2_j3.mass,
-                          _tlv_h1_j0.x, _tlv_h1_j1.x, _tlv_h2_j2.x, _tlv_h2_j3.x, 
-                          _tlv_h1_j0.y, _tlv_h1_j1.y, _tlv_h2_j2.y, _tlv_h2_j3.y, 
-                          _tlv_h1_j0.z, _tlv_h1_j1.z, _tlv_h2_j2.z, _tlv_h2_j3.z, 
-                          _tlv_h1_j0.energy, _tlv_h1_j1.energy, _tlv_h2_j2.energy, _tlv_h2_j3.energy
-                      ]
-        
+                          self.l_missingET_met[_iEvent][0], self.l_missingET_phi[_iEvent][0], self.l_scalarHT[_iEvent][0], 
+                          self.nJets, self.nBTags]
+        if self.saveLowLevelVariablesForTraining==True:
+            _variableList.extend( [_tlv_h1_j0.pt, _tlv_h1_j1.pt, _tlv_h2_j2.pt, _tlv_h2_j3.pt, 
+                                   _tlv_h1_j0.eta, _tlv_h1_j1.eta, _tlv_h2_j2.eta, _tlv_h2_j3.eta,
+                                   _tlv_h1_j0.phi, _tlv_h1_j1.phi, _tlv_h2_j2.phi, _tlv_h2_j3.phi,
+                                   _tlv_h1_j0.mass, _tlv_h1_j1.mass, _tlv_h2_j2.mass, _tlv_h2_j3.mass,
+                                   _tlv_h1_j0.x, _tlv_h1_j1.x, _tlv_h2_j2.x, _tlv_h2_j3.x, 
+                                   _tlv_h1_j0.y, _tlv_h1_j1.y, _tlv_h2_j2.y, _tlv_h2_j3.y, 
+                                   _tlv_h1_j0.z, _tlv_h1_j1.z, _tlv_h2_j2.z, _tlv_h2_j3.z, 
+                                   _tlv_h1_j0.energy, _tlv_h1_j1.energy, _tlv_h2_j2.energy, _tlv_h2_j3.energy,
+                                   self.l_jetBTag[_iEvent][_jetPair1[0]], self.l_jetBTag[_iEvent][_jetPair1[1]], self.l_jetBTag[_iEvent][_jetPair2[0]], self.l_jetBTag[_iEvent][_jetPair2[1]]
+                               ] )
+            
         return _variableList
 
 
@@ -587,14 +696,23 @@ class eventReconstruction:
 
         self.thisEventIsMatchable = False
         self.thisEventWasCorrectlyMatched = False
-        _matchedQuarksToJets, _jetVectorDict, _quarkVectorDict = self.getDictOfQuarksMatchedToJets( _iEvent )
+        self.matchedQuarksToJets = {}
+        self.jetVectorDict = {}
+        self.quarkVectorDict = {}
+        
+        # Return if QCD --> no truth to assign
+        if self.isDihiggsMC == False:
+            return
+
+        self.getDictOfQuarksMatchedToJets( _iEvent )
         # Check if a) all matches have one and only match between quark and jet, b) four jets are matched, c) 4 unique reconstructed jets are selected
-        _jetIndexList = [recoIndex[0] for recoIndex in _matchedQuarksToJets.values()]
-        if all(len(matchedJets) == 1 for matchedJets in _matchedQuarksToJets.values()) and len(_matchedQuarksToJets)==4  and (len(set(_jetIndexList)) == len(_jetIndexList)):     
+        _jetIndexList = [recoIndex[0] for recoIndex in self.matchedQuarksToJets.values()]
+        if all(len(matchedJets) == 1 for matchedJets in self.matchedQuarksToJets.values()) and len(self.matchedQuarksToJets)==4  and (len(set(_jetIndexList)) == len(_jetIndexList)):     
             self.thisEventIsMatchable = True
             self.countEvents( 'Matchable' )
 
-        return _matchedQuarksToJets, _jetVectorDict, _quarkVectorDict
+        return 
+
 
     def getRecoInformation( self, _iEvent ):
         self.returnNumberAndListOfJetIndicesPassingCuts( _iEvent )
@@ -643,23 +761,43 @@ class eventReconstruction:
         print("Finished loading branches...")
 
 
-"""
- # *** 4. Evaluate all pairing algorithms
-    for iAlgorithm in pairingAlgorithms:
-        # ** A. Fill algorithm metric for correct pairing (regardless if chosen by metric)
-        if thisEventIsMatchable == True:
-            fillVariablePlotsForCorrectPairing(iEvt, plottingData, [jetVectorDict[matchedJet[0]] for matchedJet in matchedQuarksToJets.values()], iAlgorithm)
+    def evaluatePairingAlgorithms( self, _iEvent ): 
 
-        # ** B. Pick two jet pairs based on algorithm
-        jetPair1, jetPair2, pairingMetric = selectPairsViaMatchingAlgorithm(plottingData, jetVectorDict, iAlgorithm)
+        for iAlgorithm in self.pairingAlgorithms:
+            # ** A. Fill algorithm metric for correct pairing (regardless if chosen by metric)
+            if self.thisEventIsMatchable == True:
+                self.fillVariablePlotsForCorrectPairing( _iEvent, [self.jetVectorDict[matchedJet[0]] for matchedJet in self.matchedQuarksToJets.values()], iAlgorithm)
+            
+            # ** B. Pick two jet pairs based on algorithm
+            _jetPair1, _jetPair2, _pairingMetric = self.selectPairsViaMatchingAlgorithm( iAlgorithm )
     
-        # ** C. Evaluate efficiency of pairing algorithm
-        if thisEventIsMatchable:
-            evaluatePairingEfficiency(eventCounterDict, matchedQuarksToJets, jetPair1, jetPair2, nJets, nBTags, iAlgorithm)
+            # ** C. Evaluate efficiency of pairing algorithm
+            if self.thisEventIsMatchable:
+                self.evaluatePairingEfficiency( _jetPair1, _jetPair2, iAlgorithm)
     
-        # ** D. Calculate and save variables for BDT training for single algorithm set by saveAlgorithm
-        if iAlgorithm == saveAlgorithm: 
-            variablesForBDT = calculateVariablesForBDT(jetPair1, jetPair2, jetVectorDict, nJets, nBTags, 
-                                                        l_missingET_met[iEvt], l_missingET_phi[iEvt], l_scalarHT[iEvt])
-            outputDataForLearning.append(variablesForBDT)
-"""
+            # ** D. Calculate and save variables for BDT training for single algorithm set by saveAlgorithm
+            if iAlgorithm == self.saveAlgorithm: 
+                _variablesForBDT = self.calculateVariablesForBDT(_iEvent, _jetPair1, _jetPair2)
+                self.outputDataForLearning.append(_variablesForBDT)
+
+        return
+
+
+    def writeDataForTraining(self):
+
+        _csvName = self.datasetName + '/' + ('dihiggs_' if self.isDihiggsMC else 'qcd_') + 'outputDataForLearning.csv'
+        _csvFile = open(_csvName, mode='w')
+        _writer = csv.DictWriter(_csvFile, fieldnames=self.outputVariableNames)
+        _writer.writeheader()
+        for eventData in self.outputDataForLearning:
+            _csvLineDict = {}
+            # format csv line using names of variables
+            for iVariable in range(0, len(self.outputVariableNames)):
+                _csvLineDict[ self.outputVariableNames[iVariable] ] = eventData[iVariable]
+            # write line to .csv
+            _writer.writerow( _csvLineDict )
+        _csvFile.close()
+    
+        return
+
+    
