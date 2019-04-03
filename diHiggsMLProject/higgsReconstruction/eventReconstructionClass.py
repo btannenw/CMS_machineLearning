@@ -29,6 +29,7 @@ class eventReconstruction:
         self.nJetsToStore = 4
         self.requireTags = True
         self.ptOrdered = True
+        self.considerFirstNjetsInPT = -1
         self.saveAlgorithm = 'equalDijetMass'
         self.saveLowLevelVariablesForTraining = True
 
@@ -91,6 +92,7 @@ class eventReconstruction:
 
     def runReconstruction(self):
 
+        self.printAllOptions()
         self.initFileAndBranches()
 
         for iEvt in range(0,self.delphesFile.fEntries):
@@ -151,11 +153,18 @@ class eventReconstruction:
             # ** C. save plots without if QCD
             else:
                 self.compareManyHistograms( pairingAlgorithm, ['All', 'Best'], 2, 'All Jet Pairs ' + _plotOpts[0], 'Jet Pair ' + _plotOpts[1], int(_plotOpts[2]), int(_plotOpts[3]), int(_plotOpts[4]) )
-                self.compareManyHistograms( pairingAlgorithm, ['All', 'Best'], 5, 'Best Jet Pair ' + _plotOpts[0], 'Jet Pair ' + _plotOpts[1], int(_plotOpts[2]), int(_plotOpts[3]), int(_plotOpts[4]), _normed=True)
-        
+                self.compareManyHistograms( pairingAlgorithm, ['All', 'Best'], 5, 'Best Jet Pair ' + _plotOpts[0], 'Jet Pair ' + _plotOpts[1], int(_plotOpts[2]), int(_plotOpts[3]), int(_plotOpts[4]), _normed=True)        
         
         return
 
+    def makeEfficiencyPlots(self):
+
+        _fullyMatchedDict, _onePairMatchedDict, _labels = self.listOfEfficienciesForAlgorithm()
+
+        self.calculateAndDrawEfficiency( _fullyMatchedDict, _labels, 'fullyMatched' )
+        #self.calculateAndDrawEfficiency( _onePairMatchedDict, _labels, 'onePairMatched' )
+
+        return
 
     ##############################################################
     ##             FUNCTIONS TO SET/GET VARIABLES               ##
@@ -206,8 +215,24 @@ class eventReconstruction:
     def getSaveLowLevelVariables(self):
         print ("Save low-level variables for training: ", self.saveLowLevelVariablesForTraining)
 
+    def setConsiderFirstNjetsInPT(self, _userFirstNjets):
+        self.considerFirstNjetsInPT = int(_userFirstNjets)
+    def getConsiderFirstNjetsInPT(self):
+        print ("Consider first N jets in pT, N = ", self.considerFirstNjetsInPT)
+
+    def setRequireTags(self, _requireTags):
+        self.requireTags = bool(_requireTags)
+    def getRequireTags(self):
+        print ("Require only b-tagged jets: ", self.requireTags)
+
+    def setPtOrdered(self, _ptOrdered):
+        self.ptOrdered = bool(_ptOrdered)
+    def getPtOrdered(self):
+        print ("Order jets by pT: ", self.ptOrdered)
+
 
     def printAllOptions(self):
+        print("=========   Options for {0}  =========".format(self.datasetName))
         self.getTransparency()
         self.getNJetsToStore()
         self.getQuarkToJetCutDR()
@@ -216,7 +241,10 @@ class eventReconstruction:
         self.getJetPtEtaCuts()
         self.getSaveAlgorithm()
         self.getHiggsWidth()
-        
+        self.getRequireTags()
+        self.getPtOrdered()
+        self.getConsiderFirstNjetsInPT()
+        print("======================================".format(self.datasetName))
 
 
     ##############################################################
@@ -275,6 +303,7 @@ class eventReconstruction:
         #_nEntries_arrAll = len(_arrAll)
         #s1 = _xtitle + ':Entries = {0}, mean = {1:4F}, std dev = {2:4f}\n'.format(_nEntries_arrAll, _mean_arrAll, _stdev_arrAll)
         
+
         if len( self.plottingData[_pairingAlgorithm].keys()) < len(_labels):
             print ("!!! Unequal number of arrays and labels. Learn to count better.")
             return 0
@@ -290,7 +319,7 @@ class eventReconstruction:
         for iLabel in _labels:
             plt.hist(self.plottingData[_pairingAlgorithm][iLabel], _bins, alpha=self.transparency, normed=_normed, label= iLabel+' Events')
         plt.legend(loc='upper right')
-        #plt.text(.1, .1, s1)
+        plt.figtext(.55, .5, _pairingAlgorithm)
     
         # store figure copy for later saving
         fig = plt.gcf()
@@ -353,7 +382,7 @@ class eventReconstruction:
                 
                 if self.l_jetBTag[_iEvent][iJet] == 1:
                     self.nBTags += 1
-                    if self.requireTags: #and len(self.jetIndices)<4:
+                    if self.requireTags and (self.considerFirstNjetsInPT==-1 or (self.considerFirstNjetsInPT!=-1 and len(self.jetIndices)<self.considerFirstNjetsInPT)):
                         if self.ptOrdered:
                             _added = False
                             for index in range(0, len(self.jetIndices)):
@@ -602,24 +631,54 @@ class eventReconstruction:
         return
 
 
-    def listOfEfficiencesForAlgorithm( self ):
+    def listOfEfficienciesForAlgorithm( self ):
         _fullyMatchedDict = {}
         _onePairMatchedDict = {}
-    
+        _labels = []
+
         for _iAlgorithm in self.eventCounterDict:
             _fullyMatchedDict[_iAlgorithm] = {}
             _onePairMatchedDict[_iAlgorithm] = {}
             for _iCategory in self.eventCounterDict[_iAlgorithm]:
+
+                # Calculate efficiencies
                 if self.eventCounterDict[_iAlgorithm][_iCategory]['Matchable'] > 0:
                     _fullyMatchedEff  = round( 100*float(self.eventCounterDict[_iAlgorithm][_iCategory]['Fully Matched']/self.eventCounterDict[_iAlgorithm][_iCategory]['Matchable']), 2)
                     _onePairMatchedEff = round( 100*float(self.eventCounterDict[_iAlgorithm][_iCategory]['>= 1 Pair Matched']/self.eventCounterDict[_iAlgorithm][_iCategory]['Matchable']), 2)
                     _fullyMatchedDict[_iAlgorithm][_iCategory] = _fullyMatchedEff
                     _onePairMatchedDict[_iAlgorithm][_iCategory] = _onePairMatchedEff
-                    #print(_algorithm, _iCategory)
+
+                    # ** Make list of jet/tag categories
+                    if( len(_fullyMatchedDict.keys())<2 ):
+                        _labels.append(_iCategory)
+
                     #print('Efficiency For Fully Matched: ', _fullyMatchedEff,'%')
                     #print('Efficiency For >= 1 Pair Matched: ', _onePairMatchedEff,'%')
                 
-        return _fullyMatchedDict, _onePairMatchedDict
+        return _fullyMatchedDict, _onePairMatchedDict, _labels
+
+
+    def calculateAndDrawEfficiency( self, _matchedDict, _labels, _onePairOrFullyMatched ):
+
+        _xvals = np.arange(len(_labels))
+        plt.xticks(range(len(_labels)), _labels, rotation=45)
+        
+        for algo in _matchedDict:
+            if algo != 'dijetMasses':
+                _eff_algo = [_matchedDict[algo][tagEff] for tagEff in _matchedDict[algo]]
+                _y_algo = np.array(_eff_algo)
+                plt.plot(_xvals, _y_algo, label=algo)
+
+        plt.ylim(-18, 105)
+        plt.legend(loc='lower left')
+        
+        # store figure copy for later saving
+        fig = plt.gcf()
+        
+        # draw interactively
+        plt.show()
+        
+        fig.savefig( self.datasetName + '/algoEfficiencyAsFtnOfJetTag_' + _onePairOrFullyMatched +'.png' )
 
 
     ##############################################################
