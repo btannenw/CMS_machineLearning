@@ -41,13 +41,13 @@ I used pip to install the necessary packages. To install the packages needed for
 
 My notebooks often include global lists which I use to keep track of how the weights, biases, and accuracies change throughout the algorithm training. I know this is clunky, but as long as you researt the kernel every time you train the algorithm, this isn't a problem.
 
-## Notes on My Process
+## Process Background
 
 ### Establishing a Baseline Accuracy
 #### Premise
 In order to Establish a baseline network accuracy, I used the equations below to calculate the mass of each lepton. Because muons are substantially more massive than electrons, their masses can be used to distinguish between them.
 
-![Physics equations relating Pt Eta Phi and Energy which I used to find the mass of each lepton](DataExtractionEquations.png)
+![Physics equations relating Pt Eta Phi and Energy which I used to find the mass of each lepton](./figures/DataExtractionEquations.png)
 
 For the sake of simplicity, in events where more than lepton was produced, the lepton with the highest transverse momentum was analyzed.
 
@@ -64,21 +64,38 @@ I calculated the mass as follows:
 
 <!-- I plotted the resulting mass -->
 Once I found the mass of the lepton with the highest transverse momentum in each event, I plotted the masses to see how they were distributed. <br>
-![Distribution of Real Lepton Masses less than .125 GeV/c^2](LeptonMassDistr.png)
+![Distribution of Real Lepton Masses less than .125 GeV/c^2](./figures/LeptonMassDistr.png)
 
 Looking at the graph, it is apparent that 0.10 GeV is a reasonable mass cutoff to distinguish between electrons and muons. In my code, I labeled anything more massive than 0.10GeV as a muon, and anything smaller than 0.10GeV as an electron.
 
 
 
 ### Preprocessing the Network Input Data
-The dataset in small_v2.root has five factors: transverse momentum (Pt), Eta, Phi, Energy (E), and labels (isMuon). In [DataExtraction.py](DataExtraction.py), I used the same methods from establishing a baseline accuracy to manipulate the data from the root file to make a few separate datasets all containting the same data but in different representations. 
+The dataset in small_v2.root has five factors: transverse momentum (p<sub>t</sub>), &eta;, &phi;s, Energy (E), and labels (isMuon). In [DataExtraction.py](DataExtraction.py), I used the same methods from establishing a baseline accuracy to manipulate the data from the root file to make a few separate datasets all containting the same data but in different representations. 
 
-#### P<sup>2</sup> -E<sup>2</sup>
+#### p<sub>t</sub> &eta; &phi; E
+This dateset is just the four input factors from the root file. These were used without further processing. 
+
+![plots of distibutions of p<sub>t</sub> &eta; &phi; E](./figures/pt_eta_phi_e_dist.png)
+
+These plots show that the distributions of the four features between electrons and muons are virtually indistinguishable.
+
+#### p<sup>2</sup> E<sup>2</sup>
+Given the difficulty of separating p<sub>t</sub> &eta; &phi; and E in the standard dataset, the purpose of constructing a dataset with only p<sup>2</sup> and E<sup>2</sup> was to make the relationship between the inputs and the outputs nearly linearly separable (see equation 1 under 'Establishing a Baseline Accuracy'). \
+Because the magnitudes of the energy and momentum are so close together (i.e. they differ only after the decimal point), I made the dataset only include the values of p<sup>2</sup> and E<sup>2</sup> after the decimal point. The result is that the difference in the factors is now a greater fraction of their total value, and will thus be amplified.  
+
+## Training Phase
 
 ### Exploring Overtraining
 In order to see if my network was overtraining I first started testing my accuracy on a testing dataset at every fiftieth epoch during training. I then plotted the train accuracy and test accuracy on the same plot to see if they diverged. The though process behind this is that if the network was overtraining, the train accuracy would end up substantially higher than the test accuracy. Once I did this and found that the test accuracy tightly correlated with the train accuracy, I trained the network on smaller subsets of the training data to see what the results of the same anlalysis would be. The expectation is that when training on a smaller dataset, the test accuracy would be much more inconsistent with the train accuracy.
 
-![Plot of test accuracy, training accuracy, and loss for different sized training datasets](TrainingWithDifferentSizedDatasets.png)
+![Plot of test accuracy, training accuracy, and loss for different sized training datasets](./figures/TrainingWithDifferentSizedDatasets.png)
 
+### Comparison of Different Datasets
+
+## Optimization Phase
+### Optimization through trial and error
+
+### Optimization through iterative model validation
 
 
