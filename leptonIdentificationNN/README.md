@@ -1,4 +1,6 @@
 # Lepton Identification Using Neural Nets
+THIS REPOSITORY HAS MOVED!
+I.e. this version is deprecated. If you like stuff that's up-to-date, go [here](https://github.com/neu-physics/leptonIdentificationNN)!
 
 ## Introduction
 
