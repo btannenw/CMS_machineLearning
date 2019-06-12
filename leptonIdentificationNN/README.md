@@ -6,6 +6,8 @@ This a project that aims to identify lepton flavor (electron or muon) from a sam
 
 Unless otherwise noted, the instructions for installing packages and applications assume you are running a Unix environment. When this section of the README was last updated (02/01/2019), I was running MacOS 10.13.6, Python 3.6.5, and pip 18.1
 
+This folder is now housed in its own repository [here](https://github.com/neu-physics/leptonIdentificationNN).
+
 ## Development Environment
 
 ### Running using Docker
